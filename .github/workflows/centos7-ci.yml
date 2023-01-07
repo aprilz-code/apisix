@@ -39,62 +39,62 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Cache deps
-      uses: actions/cache@v3
-      env:
-        cache-name: cache-deps
-      with:
-        path: deps
-        key: ${{ runner.os }}-${{ env.cache-name }}-centos7-${{ hashFiles('rockspec/apisix-master-0.rockspec') }}
+#    - name: Cache deps
+#      uses: actions/cache@v3
+#      env:
+#        cache-name: cache-deps
+#      with:
+#        path: deps
+#        key: ${{ runner.os }}-${{ env.cache-name }}-centos7-${{ hashFiles('rockspec/apisix-master-0.rockspec') }}
 
-    - name: Extract branch name
-      if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-      id: branch_env
-      shell: bash
-      run: |
-        echo "version=${GITHUB_REF##*/}" >>$GITHUB_OUTPUT
+#    - name: Extract branch name
+#      if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
+#      id: branch_env
+#      shell: bash
+#      run: |
+#        echo "version=${GITHUB_REF##*/}" >>$GITHUB_OUTPUT
 
-    - name: Extract test type
-      shell: bash
-      id: test_env
-      run: |
-        test_dir="${{ matrix.test_dir }}"
-        if [[ $test_dir =~ 't/plugin' ]]; then
-          echo "type=plugin" >>$GITHUB_OUTPUT
-        fi
-        if [[ $test_dir =~ 't/admin ' ]]; then
-          echo "type=first" >>$GITHUB_OUTPUT
-        fi
-        if [[ $test_dir =~ ' t/xds-library' ]]; then
-          echo "type=last" >>$GITHUB_OUTPUT
-        fi
+#    - name: Extract test type
+#      shell: bash
+#      id: test_env
+#      run: |
+#        test_dir="${{ matrix.test_dir }}"
+#        if [[ $test_dir =~ 't/plugin' ]]; then
+#          echo "type=plugin" >>$GITHUB_OUTPUT
+#        fi
+#        if [[ $test_dir =~ 't/admin ' ]]; then
+#          echo "type=first" >>$GITHUB_OUTPUT
+#        fi
+#        if [[ $test_dir =~ ' t/xds-library' ]]; then
+#          echo "type=last" >>$GITHUB_OUTPUT
+#        fi
 
-    - name: Linux launch common services
-      run: |
-        make ci-env-up project_compose_ci=ci/pod/docker-compose.common.yml
-        sudo ./ci/init-common-test-service.sh
+#    - name: Linux launch common services
+#      run: |
+#        make ci-env-up project_compose_ci=ci/pod/docker-compose.common.yml
+#        sudo ./ci/init-common-test-service.sh
+#
+#    - name: Build rpm package
+#      if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
+#      run: |
+#        export VERSION=${{ steps.branch_env.outputs.version }}
+#        sudo gem install --no-document fpm
+#        git clone --depth 1 https://github.com/api7/apisix-build-tools.git
+#
+#        # move codes under build tool
+#        mkdir ./apisix-build-tools/apisix
+#        for dir in `ls|grep -v "^apisix-build-tools$"`;do cp -r $dir ./apisix-build-tools/apisix/;done
+#
+#        cd apisix-build-tools
+#        make package type=rpm app=apisix version=${VERSION} checkout=release/${VERSION} image_base=centos image_tag=7 local_code_path=./apisix
+#        cd ..
+#        rm -rf $(ls -1 --ignore=apisix-build-tools --ignore=t --ignore=utils --ignore=ci --ignore=Makefile --ignore=rockspec)
 
-    - name: Build rpm package
-      if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-      run: |
-        export VERSION=${{ steps.branch_env.outputs.version }}
-        sudo gem install --no-document fpm
-        git clone --depth 1 https://github.com/api7/apisix-build-tools.git
-
-        # move codes under build tool
-        mkdir ./apisix-build-tools/apisix
-        for dir in `ls|grep -v "^apisix-build-tools$"`;do cp -r $dir ./apisix-build-tools/apisix/;done
-
-        cd apisix-build-tools
-        make package type=rpm app=apisix version=${VERSION} checkout=release/${VERSION} image_base=centos image_tag=7 local_code_path=./apisix
-        cd ..
-        rm -rf $(ls -1 --ignore=apisix-build-tools --ignore=t --ignore=utils --ignore=ci --ignore=Makefile --ignore=rockspec)
-
-    - name: Build xDS library
-      if: steps.test_env.outputs.type == 'last'
-      run: |
-        cd t/xds-library
-        go build -o libxds.so -buildmode=c-shared main.go export.go
+#    - name: Build xDS library
+#      if: steps.test_env.outputs.type == 'last'
+#      run: |
+#        cd t/xds-library
+#        go build -o libxds.so -buildmode=c-shared main.go export.go
 
     - name: Run centos7 docker and mapping apisix into container
       env:
@@ -103,28 +103,28 @@ jobs:
         docker run -itd -v /home/runner/work/apisix/apisix:/apisix --env TEST_FILE_SUB_DIR="$TEST_FILE_SUB_DIR" --name centos7Instance --net="host" --dns 8.8.8.8 --dns-search apache.org docker.io/centos:7 /bin/bash
         # docker exec centos7Instance bash -c "cp -r /tmp/apisix ./"
 
-    - name: Start CI env (FIRST_TEST)
-      if: steps.test_env.outputs.type == 'first'
-      run: |
-        make ci-env-up project_compose_ci=ci/pod/docker-compose.${{ steps.test_env.outputs.type }}.yml
-
-    - name: Start CI env (PLUGIN_TEST)
-      if: steps.test_env.outputs.type == 'plugin'
-      run: |
-        # download keycloak cas provider
-        sudo wget https://github.com/jacekkow/keycloak-protocol-cas/releases/download/18.0.2/keycloak-protocol-cas-18.0.2.jar -O /opt/keycloak-protocol-cas-18.0.2.jar
-
-        ./ci/pod/openfunction/build-function-image.sh
-        make ci-env-up project_compose_ci=ci/pod/docker-compose.${{ steps.test_env.outputs.type }}.yml
-        ./ci/init-${{ steps.test_env.outputs.type }}-test-service.sh
-
-    - name: Start CI env (LAST_TEST)
-      if: steps.test_env.outputs.type == 'last'
-      run: |
-        # generating SSL certificates for Kafka
-        keytool -genkeypair -keyalg RSA -dname "CN=127.0.0.1" -alias 127.0.0.1 -keystore ./ci/pod/kafka/kafka-server/selfsigned.jks -validity 365 -keysize 2048 -storepass changeit
-        make ci-env-up project_compose_ci=ci/pod/docker-compose.${{ steps.test_env.outputs.type }}.yml
-        ./ci/init-${{ steps.test_env.outputs.type }}-test-service.sh
+#    - name: Start CI env (FIRST_TEST)
+#      if: steps.test_env.outputs.type == 'first'
+#      run: |
+#        make ci-env-up project_compose_ci=ci/pod/docker-compose.${{ steps.test_env.outputs.type }}.yml
+#
+#    - name: Start CI env (PLUGIN_TEST)
+#      if: steps.test_env.outputs.type == 'plugin'
+#      run: |
+#        # download keycloak cas provider
+#        sudo wget https://github.com/jacekkow/keycloak-protocol-cas/releases/download/18.0.2/keycloak-protocol-cas-18.0.2.jar -O /opt/keycloak-protocol-cas-18.0.2.jar
+#
+#        ./ci/pod/openfunction/build-function-image.sh
+#        make ci-env-up project_compose_ci=ci/pod/docker-compose.${{ steps.test_env.outputs.type }}.yml
+#        ./ci/init-${{ steps.test_env.outputs.type }}-test-service.sh
+#
+#    - name: Start CI env (LAST_TEST)
+#      if: steps.test_env.outputs.type == 'last'
+#      run: |
+#        # generating SSL certificates for Kafka
+#        keytool -genkeypair -keyalg RSA -dname "CN=127.0.0.1" -alias 127.0.0.1 -keystore ./ci/pod/kafka/kafka-server/selfsigned.jks -validity 365 -keysize 2048 -storepass changeit
+#        make ci-env-up project_compose_ci=ci/pod/docker-compose.${{ steps.test_env.outputs.type }}.yml
+#        ./ci/init-${{ steps.test_env.outputs.type }}-test-service.sh
 
     - name: Install dependencies
       run: |
@@ -141,3 +141,20 @@ jobs:
     - name: Run test cases
       run: |
         docker exec centos7Instance bash -c "cd apisix && ./ci/centos7-ci.sh run_case"
+        docker commit  centos7Instance registry.cn-shenzhen.aliyuncs.com/whiteblog/apisix:lastest
+
+      # 登录到 阿里云镜像服务，使用 GitHub secrets 传入账号密码，密码被加密存储在 GitHub 服务器
+      - name: Login to Aliyun
+        uses: docker/login-action@v1
+        with:
+          registry: registry.cn-shenzhen.aliyuncs.com
+          username: ${{ secrets.ALIYUN_USER_NAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Push Docker Image
+        run: |
+          echo '=====开始上传镜像====='
+          echo '=====开始上传apisix====='
+          docker push registry.cn-shenzhen.aliyuncs.com/whiteblog/apisix:lastest
+          echo '=====镜像上传结束====='
+
